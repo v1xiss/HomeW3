@@ -1,0 +1,126 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+
+class Injector
+{
+    // Константи 
+    const int PROCESS_ALL_ACCESS = 0x1F0FFF;
+    const uint MEM_COMMIT = 0x1000;
+    const uint PAGE_EXECUTE_READWRITE = 0x40;
+
+    // Імпорт функ
+    [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr OpenProcess(int dwDesiredAccess, bool bInheritHandle, int dwProcessId);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
+        public static extern IntPtr GetModuleHandle(string lpModuleName);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Ansi)]
+        public static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
+
+    [DllImport("kernel32.dll")]
+        public static extern IntPtr CreateRemoteThread(IntPtr hProcess, IntPtr lpThreadAttributes,
+            uint dwStackSize, IntPtr lpStartAddress, IntPtr lpParameter, uint dwCreationFlags, IntPtr lpThreadId);
+
+    [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
+        static extern IntPtr VirtualAllocEx(IntPtr hProcess, IntPtr lpAddress,
+            uint dwSize, uint flAllocationType, uint flProtect);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress,
+            byte[] lpBuffer, uint nSize, out IntPtr lpNumberOfBytesWritten);
+
+    [DllImport("kernel32.dll")]
+        static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("mscoree.dll", CharSet = CharSet.Unicode)]
+        static extern int CorBindToRuntimeEx(
+            [In, MarshalAs(UnmanagedType.LPWStr)] string pwszVersion,
+            [In, MarshalAs(UnmanagedType.LPWStr)] string pwszBuildFlavor,
+            [In] uint dwFlags,
+            [In] ref Guid rpcid,
+            [In] ref Guid riid,
+            [Out, MarshalAs(UnmanagedType.Interface)] out object ppv);
+
+    static void Main(string[] args)
+    {
+        Console.WriteLine("--- Managed DLL Injector для навчальної задачі ---");
+
+        // 1. Пошук 
+        Process[] processes = Process.GetProcessesByName("VipApp");
+        if (processes.Length == 0)
+        {
+            Console.WriteLine("❌ Процес 'VipApp' не знайдено. Запустіть VipApp.exe!");
+            return;
+        }
+
+        Process target = processes[0];
+        Console.WriteLine($"✅ Процес VipApp знайдено. PID: {target.Id}");
+
+        // 2. Встановлення шляух
+        string dllName = "VipBypass.dll";
+        string dllPath = Path.GetFullPath(dllName);
+
+        if (!File.Exists(dllPath))
+        {
+            Console.WriteLine($"❌ DLL '{dllName}' не знайдено за шляхом: {dllPath}");
+            return;
+        }
+        Console.WriteLine($"Вибрана DLL: {dllPath}");
+
+
+        // 3. Інжекція
+        IntPtr hProcess = OpenProcess(PROCESS_ALL_ACCESS, false, target.Id);
+
+        if (hProcess == IntPtr.Zero)
+        {
+            Console.WriteLine("❌ Не вдалося відкрити процес. Спробуйте запустити від імені адміністратора.");
+            return;
+        }
+
+        try
+        {
+            // Виділення пам'яті 
+            byte[] dllBytes = Encoding.Default.GetBytes(dllPath);
+            IntPtr allocMem = VirtualAllocEx(hProcess, IntPtr.Zero, (uint)dllPath.Length + 1,
+                MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+
+            if (allocMem == IntPtr.Zero)
+            {
+                Console.WriteLine("❌ Не вдалося виділити пам'ять.");
+                return;
+            }
+
+            // Запис шляху 
+            WriteProcessMemory(hProcess, allocMem, dllBytes, (uint)dllBytes.Length, out IntPtr _);
+
+            IntPtr loadLibraryAddr = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
+
+            IntPtr remoteThread = CreateRemoteThread(hProcess, IntPtr.Zero, 0, loadLibraryAddr, allocMem, 0, IntPtr.Zero);
+
+            if (remoteThread != IntPtr.Zero)
+            {
+                Console.WriteLine("🚀 DLL ін'єктована через LoadLibraryA.");
+
+                
+                Console.WriteLine("✅ Обхід завершено! Перевірте статус у VipApp.");
+            }
+            else
+            {
+                Console.WriteLine($"❌ Помилка створення віддаленого потоку. Код помилки: {Marshal.GetLastWin32Error()}");
+            }
+        }
+        finally
+        {
+            if (hProcess != IntPtr.Zero)
+                CloseHandle(hProcess);
+        }
+
+        Console.WriteLine("\nНатисніть Enter для виходу.");
+        Console.ReadLine();
+    }
+}
