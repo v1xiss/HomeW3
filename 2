@@ -1,0 +1,52 @@
+using System;
+using System.Reflection;
+using System.Windows.Forms;
+
+namespace VipBypass
+{
+    public class EntryPoint
+    {
+        public static void Main()
+        {
+            try
+            {
+                Form targetForm = null;
+                foreach(Form form in Application.OpenForms)
+                {
+                    if (form.GetType().Name == "Form1")
+                    {
+                        targetForm = form;
+                        break;
+                    }
+                }
+
+                if (targetForm == null)
+                {
+                    MessageBox.Show("Помилка: Головну форму не знайдено.", "Помилка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                    BindingFlags.NonPublic | BindingFlags.Instance);
+
+                if (field != null)
+                {
+                    field.SetValue(targetForm, true);
+
+                    MethodInfo updateMethod = targetForm.GetType().GetMethod("UpdateUI", BindingFlags.NonPublic | BindingFlags.Instance);
+                    updateMethod ? .Invoke(targetForm, null);
+
+                    MessageBox.Show("✅ VIP-доступ отримано через ін'єкцію! Статус змінено.", "Обхід успішний",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                else
+                {
+                    MessageBox.Show("Помилка: Поле '_isVip' не знайдено.", "Помилка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Критична помилка ін'єкції: " + ex.Message, "Помилка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+    }
+}
